@@ -3,6 +3,8 @@
 //本程序主要功能，
 1、串口读取、2循环队列缓冲、3拷贝到帧结构体 4、ros发布 5、自定义消息类型
 梳理代码逻辑的可以参考我下面的两篇博文
+https://mp.weixin.qq.com/s/S134o9ofs843DG4PEGMppQ
+https://mp.weixin.qq.com/s/a9DHDKsowaYarL1EcI8Hrw
 nav30/40/50通用，使用时直接访问结构体成员即可
 ////此代码配合  nav40_demo.h和nav40_msg.msg使用
 关于串口、读取
