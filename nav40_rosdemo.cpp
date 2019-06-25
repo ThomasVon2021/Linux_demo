@@ -1,7 +1,12 @@
-//创作者：尚彬彬 2019.6.24
+/*//创作者：尚彬彬 2019.6.24
 //如有疑问请加交流qq群：903013799
-//本程序主要功能，是实现ros下读取发布串口过来的值，并且自定义消息类型
+//本程序主要功能，
+1、串口读取、2循环队列缓冲、3拷贝到帧结构体 4、ros发布 5、自定义消息类型
+梳理代码逻辑的可以参考我下面的两篇博文
+nav30/40/50通用，使用时直接访问结构体成员即可
 ////此代码配合  nav40_demo.h使用
+关于串口、读取
+*/
 #include <ros/ros.h>
 #include <fcntl.h>      //open函数的头文件
 #include <termios.h>    //串口驱动函数
@@ -11,7 +16,7 @@
 #include <string.h>
 #include "std_msgs/Float32.h"
 #include "nav40_demo.h"
-#include "nav40_demo/nav40_msg.h"
+#include "nav40_demo/nav40_msg.h"  //自定义消息文件
 using namespace std;
 
 #define NAV_DL     122    //数据长度
@@ -21,13 +26,13 @@ using namespace std;
 
 typedef struct
 {
-	unsigned char Recbuf[MAXSIZE];
+	unsigned char Recbuf[MAXSIZE];  //缓冲数组
 	int tail;              //尾指针
 	int head;              //头指针
 }Suqueue;
 
-Suqueue queue_cycle;
-APM_Datatype APM; 
+Suqueue queue_cycle;          //创建缓冲数组            
+APM_Datatype APM;            //创建帧结构体
 unsigned int checksum = 0;  //校验和
 unsigned int checkRes_L, checkRes_H; //4个字节
 unsigned char temp_buf[122]={0};
@@ -83,13 +88,14 @@ int set_uart_baudrate(const int _fd, unsigned int baud)
 
 	return 1;
 }
+
 int main(int argc, char **argv)
 {
     //初始化
     ros::init(argc, argv, "nav40_node");
     ros::NodeHandle nh;
 
-    int fd = open("/dev/ttyUSB0", O_RDWR);
+    int fd = open("/dev/ttyUSB0", O_RDWR);              //打开串口
     memset(queue_cycle.Recbuf, 0, MAXSIZE);            //初始化缓冲数组
     queue_cycle.tail = 0;                           //初始化缓冲数组指针
     queue_cycle.head = 0;
@@ -98,7 +104,7 @@ int main(int argc, char **argv)
        printf("open error.\n");
        return 0;
      }
-     set_uart_baudrate(fd, 115200);
+     set_uart_baudrate(fd, 115200);                 //串口初始化
     //公告消息
     ros::Publisher nav40_pitch = nh.advertise<std_msgs::Float32>
             ("nav40/pitch", 10);
@@ -106,44 +112,47 @@ int main(int argc, char **argv)
     //设置循环频率
     ros::Rate rate(30.0);
 
-   
-    //实例化要发布的消息
     cout << "open success"<< endl;
+	
     while(ros::ok)
     {
-        //nav40_demo::nav40_msg Pitch;
+        //nav40_demo::nav40_msg Pitch;  //如需自定义消息类型可仿造
         std_msgs::Float32  Pitch;
+	
+	//循环队列读取串口数据
         unsigned char buf[1];
         int len = read(fd, buf, 1);
 	memcpy(queue_cycle.Recbuf + queue_cycle.tail, buf, len);
 	queue_cycle.tail = (queue_cycle.tail + 1) % MAXSIZE;
         
-       
+       //进入帧结构判断
+       //循环队列大于等于2倍的长度，才进入帧结构的判断
         while ((queue_cycle.tail>queue_cycle.head && queue_cycle.tail - queue_cycle.head >= 2 * NAV_DL) || (queue_cycle.tail<queue_cycle.head && (MAXSIZE - queue_cycle.head + queue_cycle.tail) >= 2 * NAV_DL))
 		{
 			if (queue_cycle.Recbuf[queue_cycle.head] == NAV_DH1)   //校验帧头
 			{
 				queue_cycle.head = (queue_cycle.head + 1) % MAXSIZE;
 				if (queue_cycle.Recbuf[queue_cycle.head] == NAV_DH2)   //校验帧头
-				{
+				{      
 					queue_cycle.head = (queue_cycle.head + 1) % MAXSIZE;
 					for (int k = 0; k <= 117; k++)
 					{
-						checksum += queue_cycle.Recbuf[queue_cycle.head];
-						queue_cycle.head = (queue_cycle.head + 1) % MAXSIZE;
+					    checksum += queue_cycle.Recbuf[queue_cycle.head];
+					    queue_cycle.head = (queue_cycle.head + 1) % MAXSIZE;
 					}
 					checksum = checksum + 0xEB + 0x90;
 					checkRes_L = checksum & 0x00ff;
 					checkRes_H = (checksum >> 8) & 0x00ff;
 					checksum = 0;       //必须清零
+					//检验和
 					if (queue_cycle.Recbuf[queue_cycle.head] == checkRes_L && queue_cycle.Recbuf[(queue_cycle.head + 1) % MAXSIZE] == checkRes_H)
-					{
+					{   //校验和通过
 					    for (int j = 121; j>=0; j--)
 					        {
                                                    temp_buf[121-j]= queue_cycle.Recbuf[(queue_cycle.head + MAXSIZE - j+1) % MAXSIZE];
 						}
-                                             memcpy(&APM, temp_buf,122 );  //注入 缓冲区                                                     
-                                             //在这里访问结构体成员即可      
+                                             memcpy(&APM, temp_buf,122 );  // 将一帧完整的数据帧拷贝到结构体                                                     
+                                               //在这里访问结构体成员即可      
                                                printf("apm_counter:%d\r\n",APM.counter);
                                                Pitch.data=APM.pitch*180/3.1415926;
                                                nav40_pitch.publish(Pitch);//发布消息
