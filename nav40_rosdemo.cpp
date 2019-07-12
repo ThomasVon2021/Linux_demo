@@ -116,7 +116,7 @@ int main(int argc, char **argv)
 
     cout << "open success"<< endl;
 	
-    while(ros::ok)
+    while(ros::ok())
     {
         //nav40_demo::nav40_msg Pitch;  //如需自定义消息类型可仿造
         std_msgs::Float32  Pitch;
